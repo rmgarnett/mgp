@@ -61,8 +61,8 @@ which must also be in your MATLAB path.
 Usage
 -----
 
-The usage of `mgp.m` is identical to the gp(...) function from the
-GPML toolkit in prediction mode:
+The usage of `mgp.m` is identical to the `gp.m` function from the GPML
+toolkit in prediction mode:
 
     [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
      log_probabilities, posterior] = ...
