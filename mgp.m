@@ -5,33 +5,39 @@
 %   p(f | \theta) = GP(f; \mu(x; \theta), K(x, x'; \theta)),
 %
 % where \theta are the hyperparameters of the model. Suppose we have a
-% dataset D = (x, y) of observations and a set of test points x*. This
+% dataset D = (X, y) of observations and a test point x*. This
 % function returns the mean and variance of the approximate marginal
-% predictive distributions for the observations y* and latent function
-% values f*:
+% predictive distributions for the associated observation value y* and
+% latent function value f*:
 %
-%   p(y* | x*, D) = \int p(y* | x*, D, \theta) p(\theta | D) d\theta
-%   p(f* | x*, D) = \int p(f* | x*, D, \theta) p(\theta | D) d\theta
+%   p(y* | x*, D) = \int p(y* | x*, D, \theta) p(\theta | D) d\theta,
+%   p(f* | x*, D) = \int p(f* | x*, D, \theta) p(\theta | D) d\theta,
 %
-% marginalizing over hyperparameters \theta. The approximate posterior
-% is derived using he "MGP" approximation described in
+% where we have marginalized over the hyperparameters \theta. The
+% approximate posterior is derived using he "MGP" approximation
+% described in
 %
 %   Garnett, R., Osborne, M., and Hennig, P. Active Learning of Linear
-%   Embeddings for Gaussian Processes. (2013). arXiv:1310.6740 [stat.ML]
+%   Embeddings for Gaussian Processes. (2013). arXiv:1310.6740 [stat.ML].
 %
 % Notes
 % -----
 %
 % This code is only appropriate for GP regression! Exact inference
-% with a Gaussian likelihood is assumed.
+% with a Gaussian observation likelihood is assumed.
 %
-% The MGP approximation requires that the provided hyperparameters
-% be the MAP hyperparameters:
+% The MGP approximation requires that the provided hyperparameters be
+% the MLE hyperparameters:
 %
-%   \hat{theta} = argmax_\theta p(y | x, \theta).
+%   \hat{theta} = argmax_\theta log p(y | X, \theta),
 %
-% This function does not perform the maximization but rather
-% assumes that the given hyperparameters represent \hat{theta}.
+% or, if using a hyperparameter prior p(\theta), the MAP
+% hyperparameters:
+%
+%   \hat{theta} = argmax_\theta log p(y | X, \theta) + log p(\theta).
+%
+% This function does not perform the maximization over \theta but
+% rather assumes that the given hyperparameters represent \hat{theta}.
 %
 % Dependencies
 % ------------
@@ -47,22 +53,24 @@
 %
 %   https://github.com/rmgarnett/gpml_extensions/
 %
+% which must also be in your MATLAB path.
+%
 % Usage
 % -----
 %
 % The usage of mgp.m is identical to the gp(...) function from the
-% GPML toolkit in test mode:
+% GPML toolkit in prediction mode:
 %
 %   [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
 %    log_probabilities, posterior] = ...
 %        mgp(hyperparameters, inference_method, mean_function, ...
-%            covariance_function, likelihood, x, y, x_star, y_star)
+%            covariance_function, likelihood, x, y, x_star, y_star);
 %
 % Inputs
 % ------
 %
 %       hyperparameters: a GPML hyperparameter struct containing the
-%                        MAP hyperparameters
+%                        MLE/MAP hyperparameters
 %      inference_method: a GPML inference method (note: infExact is assumed!)
 %         mean_function: a GPML mean function
 %   covariance_function: a GPML covariance function
@@ -79,14 +87,15 @@
 %     y_star_variance: the approximate Var[y* | x*, D]
 %         f_star_mean: the approximate   E[f* | x*, D]
 %     f_star_variance: the approximate Var[f* | x*, D]
-%   log_probabilities: if test observation values y_star are
-%                      provided, a vector containing the
-%                      approximate log predictive probabilities
+%   log_probabilities: if test observation values y_star are provided,
+%                      a vector containing the approximate log
+%                      predictive probabilities
 %
-%                        log p(y* | x*, D)
+%                        log p(y* | x*, D).
 %
 %           posterior: a GPML posterior struct corresponding to the
-%                      provided training data and MAP hyperparameters
+%                      provided training data and MLE/MAP
+%                      hyperparameters
 %
 % See also GP.
 %
@@ -96,18 +105,16 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
           log_probabilities, posterior] = mgp(hyperparameters, ~, ...
           mean_function, covariance_function, ~, x, y, x_star, y_star)
 
-  num_test = size(x_star, 1);
-
   % convenience handles
   mu = @(varargin) feval(mean_function{:},       hyperparameters.mean, varargin{:});
   K  = @(varargin) feval(covariance_function{:}, hyperparameters.cov,  varargin{:});
 
-  % find GP posterior and Hessian of log likelihood evaluated at the MAP
-  % \theta
+  % find GP posterior and Hessian of negative log likelihood evaluated
+  % at the MLE/MAP \theta
   [posterior, ~, ~, HnlZ] = exact_inference(hyperparameters, ...
           mean_function, covariance_function, [], x, y);
 
-  % find the predictive distribution conditioned on the MAP \theta
+  % find the predictive distribution conditioned on the MLE/MAP \theta
   [~, ~, f_star_mean, f_star_variance] = ...
       gp(hyperparameters, [], mean_function, covariance_function, ...
          [], x, posterior, x_star);
@@ -130,9 +137,10 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
 
   % for each hyperparameter \theta_i, we must compute:
   %
-  %   d mu_{f | D}(x*; \theta) / d \theta_i and
-  %   d  V_{f | D}(x*; \theta) / d \theta_i
+  %   d mu_{f | D}(x*; \theta) / d \theta_i, and
+  %   d  V_{f | D}(x*; \theta) / d \theta_i.
 
+  num_test            = size(x_star, 1);
   num_hyperparameters = size(HnlZ.H, 1);
 
   df_star_mean     = zeros(num_test, num_hyperparameters);
@@ -164,9 +172,13 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
     dm_star = mu(x_star, i);
 
     df_star_mean(:, HnlZ.mean_ind(i)) = dm_star - k_star_V_inv * dm;
+
+    % the predictive variance does not depend on the mean, so
+    % d  V_{f | D}(x*; \theta) / d \theta_i = 0
   end
 
-  % we inflate the predictive variance to match MGP approximation
+  % the MGP approximation inflates the predictive variance to
+  % account for uncertainty in \theta
   f_star_variance = ...
       (4 / 3) * f_star_variance + ...
       product_diag(df_star_mean,     HnlZ.H \ df_star_mean') + ...
@@ -177,7 +189,7 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
   y_star_mean     = f_star_mean;
   y_star_variance = f_star_variance + noise_variance;
 
-  % log predictive probabilities
+  % if y* given, compute log predictive probabilities
   if (nargin > 8)
     log_probabilities = likGauss(hyperparameters.lik, y_star, ...
                                  f_star_mean, f_star_variance, 'infEP');
@@ -185,7 +197,7 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
 
 end
 
-% returns diag(AB)
+% returns diag(AB) without computing the full product
 function result = product_diag(A, B)
 
   result = sum(B .* A')';
