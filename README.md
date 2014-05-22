@@ -17,6 +17,7 @@ approximate marginal predictive distributions for the associated
 observation value ![y*][6] and latent function value ![f*][7]:
 
 ![p(y* | x*, D) = \int p(y* | x*, D, \theta) p(\theta | D) d\theta][8]
+
 ![p(f* | x*, D) = \int p(f* | x*, D, \theta) p(\theta | D) d\theta][9]
 
 where we have marginalized over the hyperparameters ![\theta][3].
