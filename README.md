@@ -36,7 +36,7 @@ the MLE hyperparameters:
 or, if using a hyperparameter prior p(\theta), the MAP
 hyperparameters:
 
-![\hat{\theta} = argmax_\theta log p(y | X, \theta) + log p(\theta)][11].
+![\hat{\theta} = argmax_\theta log p(y | X, \theta) + log p(\theta)][11]
 
 This function does not perform the maximization over ![\theta][3] but
 rather assumes that the given hyperparameters represent
