@@ -51,7 +51,7 @@ toolbox, available here:
 http://www.gaussianprocess.org/gpml/code/matlab/doc/
 
 The GPML toolbox must be in your MATLAB path for this function to
-work. This function also depends on the gpml_extensions repository,
+work. This function also depends on the `gpml_extensions` repository,
 available here:
 
 https://github.com/rmgarnett/gpml_extensions/
