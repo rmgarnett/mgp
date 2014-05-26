@@ -62,43 +62,9 @@ Usage
 -----
 
 The usage of `mgp.m` is identical to the `gp.m` function from the GPML
-toolkit in prediction mode:
+toolkit in prediction mode. See `mgp.m` for more information.
 
-    [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
-     log_probabilities, posterior] = ...
-         mgp(hyperparameters, inference_method, mean_function, ...
-             covariance_function, likelihood, x, y, x_star, y_star);
-
-Inputs
-------
-
-        hyperparameters: a GPML hyperparameter struct containing the
-                         MLE/MAP hyperparameters
-       inference_method: a GPML inference method (note: infExact is assumed!)
-          mean_function: a GPML mean function
-    covariance_function: a GPML covariance function
-             likelihood: a GPML likelihood (note: likGauss is assumed!)
-                      x: training observation locations (n x D)
-                 x_star:     test observation locations (n_star x D)
-                      y: training observation values (n x 1)
-                 y_star:     test observation values (n_star x 1) (optional)
-
-Outputs
--------
-
-          y_star_mean: the approximate   E[y* | x*, D]
-      y_star_variance: the approximate Var[y* | x*, D]
-          f_star_mean: the approximate   E[f* | x*, D]
-      f_star_variance: the approximate Var[f* | x*, D]
-    log_probabilities: if test observation values y_star are provided,
-                       a vector containing the approximate log
-                       predictive probabilities
-
-                       log p(y* | x*, D).
-
-            posterior: a GPML posterior struct corresponding to the
-                       provided training data and MLE/MAP
-                       hyperparameters
+A demo is provided in `demo/demo.m`.
 
 [1]: http://latex.codecogs.com/svg.latex?f
 [2]: http://latex.codecogs.com/svg.latex?p(f%20%5Cmid%20%5Ctheta)%20%3D%20%5Cmathcal%7BGP%7D%5Cbigl(f%3B%20%5Cmu(x%3B%20%5Ctheta)%2C%20K(x%2C%20x%27%3B%20%5Ctheta)%5Cbigr)
