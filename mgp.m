@@ -71,7 +71,7 @@
 %
 %       hyperparameters: a GPML hyperparameter struct containing the
 %                        MLE/MAP hyperparameters
-%      inference_method: a GPML inference method (note: infExact is assumed!)
+%      inference_method: a GPML inference method
 %         mean_function: a GPML mean function
 %   covariance_function: a GPML covariance function
 %            likelihood: a GPML likelihood (note: likGauss is assumed!)
@@ -102,8 +102,14 @@
 % Copyright (c) 2014 Roman Garnett.
 
 function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
-          log_probabilities, posterior] = mgp(hyperparameters, ~, ...
-          mean_function, covariance_function, ~, x, y, x_star, y_star)
+          log_probabilities, posterior] = mgp(hyperparameters, ...
+          inference_method, mean_function, covariance_function, ~, ...
+          x, y, x_star, y_star)
+
+  % perform initial argument checks/transformations
+  [hyperparameters, inference_method, mean_function, covariance_function] ...
+      = check_arguments(hyperparameters, inference_method, mean_function, ...
+                        covariance_function, x);
 
   % convenience handles
   mu = @(varargin) feval(mean_function{:},       hyperparameters.mean, varargin{:});
@@ -111,7 +117,7 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
 
   % find GP posterior and Hessian of negative log likelihood evaluated
   % at the MLE/MAP \theta
-  [posterior, ~, ~, HnlZ] = exact_inference(hyperparameters, ...
+  [posterior, ~, ~, HnlZ] = inference_method(hyperparameters, ...
           mean_function, covariance_function, [], x, y);
 
   % find the predictive distribution conditioned on the MLE/MAP \theta
@@ -201,5 +207,80 @@ end
 function result = product_diag(A, B)
 
   result = sum(B .* A')';
+
+end
+
+% performs argument checks/transformations similar to those found in
+% gp.m from GPML but guaranteed to be compatible with the MGP
+function [hyperparameters, inference_method, ...
+          mean_function, covariance_function] = ...
+      check_arguments(hyperparameters, inference_method, ...
+                      mean_function, covariance_function, x)
+
+  % default to exact inference
+  if (isempty(inference_method))
+    inference_method = @exact_inference;
+  end
+
+  % default to zero mean function
+  if (isempty(mean_function))
+    mean_function = {@zero_mean};
+  end
+
+  % no default covariance function
+  if (isempty(covariance_function))
+    error('mgp:missing_argument', ...
+          'covariance function must be defined!');
+  end
+
+  % allow string/function handle input for mean/covariance functions;
+  % convert to cell arrays if necessary
+  if (ischar(mean_function) || ...
+      isa(mean_function, 'function_handle'))
+    mean_function = {mean_function};
+  end
+
+  if (ischar(covariance_function) || ...
+      isa(covariance_function, 'function_handle'))
+    covariance_function = {covariance_function};
+  end
+
+  % ensure all hyperparameter fields exist
+  for field = {'cov', 'lik', 'mean'}
+    if (~isfield(hyperparameters, field{:}))
+      hyperparameters.(field{:}) = [];
+    end
+  end
+
+  % check dimension of hyperparameter fields
+  D = size(x, 2);
+
+  expression = feval(mean_function{:});
+  if (numel(hyperparameters.mean) ~= eval(expression))
+    error('mgp:incorrect_specification', ...
+          'wrong number of mean hyperparameters! (%i given, %s expected)', ...
+          numel(hyperparameters.mean), ...
+          expression);
+  end
+
+  expression = feval(covariance_function{:});
+  if (numel(hyperparameters.cov) ~= eval(expression))
+    error('mgp:incorrect_specification', ...
+          'wrong number of covariance hyperparameters! (%i given, %s expected)', ...
+          numel(hyperparameters.cov), ...
+          expression);
+  end
+
+  if (numel(hyperparameters.lik) ~= 1)
+    error('mgp:incorrect_specification', ...
+          'wrong number of likelihood hyperparameters! (%i given, 1 expected)', ...
+          numel(hyperparameters.lik));
+  end
+
+  % if infExact specified, use drop-in replacement exact_inference
+  % instead
+  if (isequal(inference_method, @infExact))
+    inference_method = @exact_inference;
+  end
 
 end
