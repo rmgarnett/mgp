@@ -199,6 +199,8 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
   if (nargin > 8)
     log_probabilities = likGauss(hyperparameters.lik, y_star, ...
                                  f_star_mean, f_star_variance, 'infEP');
+  else
+    log_probabilities = [];
   end
 
 end
