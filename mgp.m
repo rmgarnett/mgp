@@ -76,9 +76,10 @@
 %   covariance_function: a GPML covariance function
 %            likelihood: a GPML likelihood (note: likGauss is assumed!)
 %                     x: training observation locations (n x D)
-%                x_star:     test observation locations (n_star x D)
-%                     y: training observation values (n x 1)
-%                y_star:     test observation values (n_star x 1) (optional)
+%                     y: training observation values (n x 1) or
+%                        GPML posterior struct
+%                x_star: test observation locations (n_star x D)
+%                y_star: test observation values (n_star x 1) (optional)
 %
 % Outputs
 % -------
