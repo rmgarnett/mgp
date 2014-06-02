@@ -196,7 +196,7 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
   y_star_variance = f_star_variance + noise_variance;
 
   % if y* given, compute log predictive probabilities
-  if (nargin > 8)
+  if (nargin > 8 && ~isempty(y_star))
     log_probabilities = likGauss(hyperparameters.lik, y_star, ...
                                  f_star_mean, f_star_variance, 'infEP');
   else
