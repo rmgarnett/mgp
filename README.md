@@ -4,7 +4,8 @@ MGP
 This is a `MATLAB` implementation of the "marginal GP" (MGP) described
 in:
 > Garnett, R., Osborne, M., and Hennig, P. Active Learning of Linear
-> Embeddings for Gaussian Processes. (2013). arXiv:1310.6740 [stat.ML].
+> Embeddings for Gaussian Processes. (2014). 30th Conference on
+> Uncertainty in Artificial Intellignece (UAI 2014).
 
 Suppose we have a Gaussian process model on a latent function ![f][1]:
 
