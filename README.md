@@ -34,14 +34,14 @@ the MLE hyperparameters:
 
 ![\hat{\theta} = argmax_\theta log p(y | X, \theta)][10]
 
-or, if using a hyperparameter prior p(\theta), the MAP
+or, if using a hyperparameter prior ![p(\theta)][11], the MAP
 hyperparameters:
 
-![\hat{\theta} = argmax_\theta log p(y | X, \theta) + log p(\theta)][11]
+![\hat{\theta} = argmax_\theta log p(y | X, \theta) + log p(\theta)][12]
 
 This function does not perform the maximization over ![\theta][3] but
 rather assumes that the given hyperparameters represent
-![\hat{\theta}][12].
+![\hat{\theta}][13].
 
 Dependencies
 ------------
@@ -77,5 +77,6 @@ A demo is provided in `demo/demo.m`.
 [8]: http://latex.codecogs.com/svg.latex?p(y%5E%5Cast%20%5Cmid%20x%5E%5Cast%2C%20%5Cmathcal%7BD%7D)%20%3D%20%5Cint%20p(y%5E%5Cast%20%5Cmid%20x%5E%5Cast%2C%20%5Cmathcal%7BD%7D%2C%20%5Ctheta)%20p(%5Ctheta%20%5Cmid%20%5Cmathcal%7BD%7D)%20%5C%2C%20%5Cmathrm%7Bd%7D%5Ctheta
 [9]: http://latex.codecogs.com/svg.latex?p(f%5E%5Cast%20%5Cmid%20x%5E%5Cast%2C%20%5Cmathcal%7BD%7D)%20%3D%20%5Cint%20p(f%5E%5Cast%20%5Cmid%20x%5E%5Cast%2C%20%5Cmathcal%7BD%7D%2C%20%5Ctheta)%20p(%5Ctheta%20%5Cmid%20%5Cmathcal%7BD%7D)%20%5C%2C%20%5Cmathrm%7Bd%7D%5Ctheta
 [10]: http://latex.codecogs.com/svg.latex?%5Chat%7B%5Ctheta%7D%20%3D%20%5Coperatorname*%7Barg%5C%2Cmax%7D_%7B%5Ctheta%7D%20%5Clog%20p(y%20%5Cmid%20X%2C%20%5Ctheta)
-[11]: http://latex.codecogs.com/svg.latex?%5Chat%7B%5Ctheta%7D%20%3D%20%5Coperatorname*%7Barg%5C%2Cmax%7D_%7B%5Ctheta%7D%20%5Clog%20p(y%20%5Cmid%20X%2C%20%5Ctheta)%20%2B%20%5Clog%20p(%5Ctheta)
-[12]: http://latex.codecogs.com/svg.latex?%5Chat%7B%5Ctheta%7D
+[12]: http://latex.codecogs.com/svg.latex?p(%5Ctheta)
+[12]: http://latex.codecogs.com/svg.latex?%5Chat%7B%5Ctheta%7D%20%3D%20%5Coperatorname*%7Barg%5C%2Cmax%7D_%7B%5Ctheta%7D%20%5Clog%20p(y%20%5Cmid%20X%2C%20%5Ctheta)%20%2B%20%5Clog%20p(%5Ctheta)
+[13]: http://latex.codecogs.com/svg.latex?%5Chat%7B%5Ctheta%7D
