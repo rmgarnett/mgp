@@ -18,7 +18,8 @@
 % described in
 %
 %   Garnett, R., Osborne, M., and Hennig, P. Active Learning of Linear
-%   Embeddings for Gaussian Processes. (2013). arXiv:1310.6740 [stat.ML].
+%   Embeddings for Gaussian Processes. (2014). 30th Conference on
+%   Uncertainty in Artificial Intelligence (UAI 2014).
 %
 % Notes
 % -----
@@ -61,10 +62,27 @@
 % The usage of mgp.m is identical to the gp(...) function from the
 % GPML toolkit in prediction mode:
 %
-%   [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
-%    log_probabilities, posterior] = ...
+%   [y_star_mean, y_star_variance, ...
+%    f_star_mean, f_star_variance, ...
+%    log_probabilities, posterior, ...
+%    y_star_variance_gp, f_star_variance_gp, ...
+%    log_probabilities_gp] = ...
 %        mgp(hyperparameters, inference_method, mean_function, ...
 %            covariance_function, likelihood, x, y, x_star, y_star);
+%
+% There are three additional output arguments: y_star_variance_gp,
+% f_star_variance_gp, and log_probabilities_gp. These provide:
+%
+%   Var[y* | x*, D, \hat{\theta}],
+%   Var[f* | x*, D, \hat{\theta}],
+%
+% and
+%
+%   log p(y* | x*, D, \hat{theta}),
+%
+% respectively. That is, these give the outputs that would have been
+% provided by calling gp(...) without the MGP corrections applied,
+% if desired.
 %
 % Inputs
 % ------
@@ -84,28 +102,42 @@
 % Outputs
 % -------
 %
-%         y_star_mean: the approximate   E[y* | x*, D]
-%     y_star_variance: the approximate Var[y* | x*, D]
-%         f_star_mean: the approximate   E[f* | x*, D]
-%     f_star_variance: the approximate Var[f* | x*, D]
-%   log_probabilities: if test observation values y_star are provided,
-%                      a vector containing the approximate log
-%                      predictive probabilities
+%            y_star_mean: the approximate   E[y* | x*, D]
+%        y_star_variance: the approximate Var[y* | x*, D]
+%            f_star_mean: the approximate   E[f* | x*, D]
+%        f_star_variance: the approximate Var[f* | x*, D]
+%      log_probabilities: if test observation values y_star are
+%                         provided, a vector containing the
+%                         approximate log predictive probabilities
 %
-%                        log p(y* | x*, D).
+%                           log p(y* | x*, D).
 %
-%           posterior: a GPML posterior struct corresponding to the
-%                      provided training data and MLE/MAP
-%                      hyperparameters
+%              posterior: a GPML posterior struct corresponding to the
+%                         provided training data and MLE/MAP
+%                         hyperparameters
+%
+% Outputs conditioned on \hat{\theta} (no MGP corrections applied,
+% matches outputs from gp.m):
+%
+%     y_star_variance_gp: Var[y* | x*, D, \hat{\theta}]
+%     f_star_variance_gp: Var[f* | x*, D, \hat{\theta}]
+%   log_probabilities_gp: if test observation values y_star are
+%                         provided, a vector containing the
+%                         approximate log predictive probabilities
+%
+%                           log p(y* | x*, D, \hat{\theta}).
 %
 % See also GP.
-%
+
 % Copyright (c) 2014 Roman Garnett.
 
-function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
-          log_probabilities, posterior] = mgp(hyperparameters, ...
-          inference_method, mean_function, covariance_function, ~, ...
-          x, y, x_star, y_star)
+function [y_star_mean, y_star_variance, ...
+          f_star_mean, f_star_variance, ...
+          log_probabilities, posterior, ...
+          y_star_variance_gp, f_star_variance_gp, ...
+          log_probabilities_gp] = ...
+      mgp(hyperparameters, inference_method, mean_function, ...
+          covariance_function, ~, x, y, x_star, y_star)
 
   % perform initial argument checks/transformations
   [hyperparameters, inference_method, mean_function, covariance_function] ...
@@ -122,9 +154,19 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
           mean_function, covariance_function, [], x, y);
 
   % find the predictive distribution conditioned on the MLE/MAP \theta
-  [~, ~, f_star_mean, f_star_variance] = ...
-      gp(hyperparameters, [], mean_function, covariance_function, ...
-         [], x, posterior, x_star);
+  if ((nargin > 8) && (nargout > 8) && ~isempty(y_star))
+    % log probaiblities conditioned on MLE/MAP \theta requested
+    [y_star_mean, y_star_variance_gp, f_star_mean, f_star_variance_gp, ...
+     log_probabilities_gp] = gp(hyperparameters, [], mean_function, ...
+                                covariance_function, [], x, posterior, ...
+                                x_star, y_star);
+  else
+    [y_star_mean, y_star_variance_gp, f_star_mean, f_star_variance_gp] ...
+        = gp(hyperparameters, [], mean_function, covariance_function, ...
+             [], x, posterior, x_star);
+
+    log_probabilities_gp = [];
+  end
 
   % precompute k*' [ K + \sigma^2 I ]^{-1}; it's used a lot
   k_star = K(x, x_star);
@@ -181,23 +223,22 @@ function [y_star_mean, y_star_variance, f_star_mean, f_star_variance, ...
     df_star_mean(:, HnlZ.mean_ind(i)) = dm_star - k_star_V_inv * dm;
 
     % the predictive variance does not depend on the mean, so
-    % d  V_{f | D}(x*; \theta) / d \theta_i = 0
+    % d V_{f | D}(x*; \theta) / d \theta_i = 0
   end
 
   % the MGP approximation inflates the predictive variance to
   % account for uncertainty in \theta
   f_star_variance = ...
-      (4 / 3) * f_star_variance + ...
+      (4 / 3) * f_star_variance_gp + ...
       product_diag(df_star_mean,     HnlZ.H \ df_star_mean') + ...
       product_diag(df_star_variance, HnlZ.H \ df_star_variance') ./ ...
-      (3 * f_star_variance);
+      (3 * f_star_variance_gp);
 
   % approximate predictive distribution for y* (observations)
-  y_star_mean     = f_star_mean;
   y_star_variance = f_star_variance + noise_variance;
 
   % if y* given, compute log predictive probabilities
-  if (nargin > 8 && ~isempty(y_star))
+  if ((nargin > 8) && (nargout > 4) && ~isempty(y_star))
     log_probabilities = likGauss(hyperparameters.lik, y_star, ...
                                  f_star_mean, f_star_variance, 'infEP');
   else
