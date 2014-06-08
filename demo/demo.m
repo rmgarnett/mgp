@@ -36,7 +36,7 @@ y_star = y_star_mean + ...
 
 % setup prediction GP
 
-% We'll use a constantr mean and a squared exponential covariance. We
+% We'll use a constant mean and a squared exponential covariance. We
 % must use mean/covariance functions that support an extended GPML
 % syntax allowing the calculation of second partial dervivatives with
 % respect to hyperparameters. The gpml_extensions package contains
