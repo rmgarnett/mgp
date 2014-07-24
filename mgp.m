@@ -92,7 +92,7 @@
 %      inference_method: a GPML inference method
 %         mean_function: a GPML mean function
 %   covariance_function: a GPML covariance function
-%            likelihood: a GPML likelihood (note: likGauss is assumed!)
+%            likelihood: a GPML likelihood
 %                     x: training observation locations (n x D)
 %                     y: training observation values (n x 1) or
 %                        GPML posterior struct
@@ -137,49 +137,54 @@ function [y_star_mean, y_star_variance, ...
           y_star_variance_gp, f_star_variance_gp, ...
           log_probabilities_gp] = ...
       mgp(hyperparameters, inference_method, mean_function, ...
-          covariance_function, ~, x, y, x_star, y_star)
+          covariance_function, likelihood, x, y, x_star, y_star)
 
   % perform initial argument checks/transformations
-  [hyperparameters, inference_method, mean_function, covariance_function] ...
-      = check_arguments(hyperparameters, inference_method, mean_function, ...
-                        covariance_function, x);
+  [hyperparameters, inference_method, mean_function, covariance_function, ...
+   likelihood] = check_arguments(hyperparameters, inference_method, ...
+          mean_function, covariance_function, likelihood, x);
 
   % convenience handles
   mu = @(varargin) feval(mean_function{:},       hyperparameters.mean, varargin{:});
   K  = @(varargin) feval(covariance_function{:}, hyperparameters.cov,  varargin{:});
 
   % find GP posterior and Hessian of negative log likelihood evaluated
-  % at the MLE/MAP \theta
-  [posterior, ~, ~, HnlZ] = inference_method(hyperparameters, ...
+  % at the MLE/MAP \theta, as well as the derivatives of alpha and
+  % diag W^{-1} with respect to \theta
+  [posterior, ~, ~, HnlZ, dalpha, dWinv] = inference_method(hyperparameters, ...
           mean_function, covariance_function, [], x, y);
 
   % find the predictive distribution conditioned on the MLE/MAP \theta
   if ((nargin > 8) && (nargout > 8) && ~isempty(y_star))
     % log probaiblities conditioned on MLE/MAP \theta requested
     [y_star_mean, y_star_variance_gp, f_star_mean, f_star_variance_gp, ...
-     log_probabilities_gp] = gp(hyperparameters, [], mean_function, ...
-                                covariance_function, [], x, posterior, ...
-                                x_star, y_star);
+     log_probabilities_gp] = gp(hyperparameters, inference_method, ...
+            mean_function, covariance_function, likelihood, x, posterior, ...
+            x_star, y_star);
   else
     [y_star_mean, y_star_variance_gp, f_star_mean, f_star_variance_gp] ...
-        = gp(hyperparameters, [], mean_function, covariance_function, ...
-             [], x, posterior, x_star);
+        = gp(hyperparameters, inference_method, mean_function, ...
+             covariance_function, likelihood, x, posterior, x_star);
 
     log_probabilities_gp = [];
   end
 
-  % precompute k*' [ K + \sigma^2 I ]^{-1}; it's used a lot
+  % precompute k*' [ K + W^{-1} ]^{-1}; it's used a lot
   k_star = K(x, x_star);
 
   noise_variance = exp(2 * hyperparameters.lik);
 
   % handle different posterior parameterizations
   if (is_chol(posterior.L))
-    % high-noise parameterization: posterior.L contains chol(K / sigma^2 + I)
+    % posterior.L contains chol(I + W^{1/2} K W^{1/2})
 
-    k_star_V_inv = solve_chol(posterior.L, k_star)' / noise_variance;
+    % [ K + W^{-1} ]^{-1} =
+    % W^{1/2} [I + W^{1/2} K W^{1/2} ]^{-1} W^{1/2}
+    k_star_V_inv = ...
+        bsxfun(@times, posterior.sW', ...
+               solve_chol(posterior.L, bsxfun(@times, posterior.sW, k_star))');
   else
-    % low-noise parameterization: posterior.L contains -inv(K + \sigma^2 I)
+    % posterior.L contains -[ K + W^{-1} ]^{-1}
 
     k_star_V_inv = -k_star' * posterior.L;
   end
@@ -202,28 +207,33 @@ function [y_star_mean, y_star_variance, ...
     dk_star_star = K(x_star, 'diag', i);
 
     df_star_mean(:, HnlZ.covariance_ind(i)) = ...
-        (dk_star' - k_star_V_inv * dK) * posterior.alpha;
+        dk_star' * posterior.alpha + k_star' * dalpha.cov(:, i);
 
     df_star_variance(:, HnlZ.covariance_ind(i)) = ...
-        dk_star_star - product_diag(k_star_V_inv, 2 * dk_star - dK * k_star_V_inv');
+        dk_star_star - ...
+        product_diag(k_star_V_inv, ...
+                     2 * dk_star - (dK + diag(dWinv.cov(:, i))) * k_star_V_inv');
   end
 
-  % partial with respect to likelihood hyperparameter log(\sigma)
-  df_star_mean(:, HnlZ.likelihood_ind) = ...
-      -2 * noise_variance * k_star_V_inv * posterior.alpha;
+  % partials with respect to likelihood hyperparameters
 
-  df_star_variance(:, HnlZ.likelihood_ind) = ...
-      2 * noise_variance * product_diag(k_star_V_inv, k_star_V_inv');
+  for i = 1:numel(HnlZ.likelihood_ind)
+    df_star_mean(:, HnlZ.likelihood_ind(i)) = k_star' * dalpha.lik(:, i);
+
+    df_star_variance(:, HnlZ.likelihood_ind(i)) = ...
+        product_diag(k_star_V_inv, ...
+                     bsxfun(@times, dWinv.lik(:, i), k_star_V_inv'));
+  end
 
   % partials with respect to mean hyperparameters
   for i = 1:numel(HnlZ.mean_ind)
-    dm      = mu(x,      i);
     dm_star = mu(x_star, i);
 
-    df_star_mean(:, HnlZ.mean_ind(i)) = dm_star - k_star_V_inv * dm;
+    df_star_mean(:, HnlZ.mean_ind(i)) = dm_star + k_star' * dalpha.mean(:, i);
 
-    % the predictive variance does not depend on the mean, so
-    % d V_{f | D}(x*; \theta) / d \theta_i = 0
+    df_star_variance(:, HnlZ.mean_ind(i)) = ...
+        product_diag(k_star_V_inv, ...
+            bsxfun(@times, dWinv.mean(:, i), k_star_V_inv'));
   end
 
   % the MGP approximation inflates the predictive variance to
@@ -239,8 +249,8 @@ function [y_star_mean, y_star_variance, ...
 
   % if y* given, compute log predictive probabilities
   if ((nargin > 8) && (nargout > 4) && ~isempty(y_star))
-    log_probabilities = likGauss(hyperparameters.lik, y_star, ...
-                                 f_star_mean, f_star_variance, 'infEP');
+    log_probabilities = feval(likelihood{:}, hyperparameters.lik, y_star, ...
+            f_star_mean, f_star_variance);
   else
     log_probabilities = [];
   end
@@ -257,9 +267,10 @@ end
 % performs argument checks/transformations similar to those found in
 % gp.m from GPML but guaranteed to be compatible with the MGP
 function [hyperparameters, inference_method, ...
-          mean_function, covariance_function] = ...
+          mean_function, covariance_function, likelihood] = ...
       check_arguments(hyperparameters, inference_method, ...
-                      mean_function, covariance_function, x)
+                      mean_function, covariance_function, ...
+                      likelihood, x)
 
   % default to exact inference
   if (isempty(inference_method))
@@ -277,8 +288,13 @@ function [hyperparameters, inference_method, ...
           'covariance function must be defined!');
   end
 
-  % allow string/function handle input for mean/covariance functions;
-  % convert to cell arrays if necessary
+  % default to Gaussian likelihood
+  if (isempty(likelihood))
+    likelihood = {@likGauss};
+  end
+
+  % allow string/function handle input for mean, covariance, and
+  % likelihood functions; convert to cell arrays if necessary
   if (ischar(mean_function) || ...
       isa(mean_function, 'function_handle'))
     mean_function = {mean_function};
@@ -287,6 +303,11 @@ function [hyperparameters, inference_method, ...
   if (ischar(covariance_function) || ...
       isa(covariance_function, 'function_handle'))
     covariance_function = {covariance_function};
+  end
+
+  if (ischar(likelihood) || ...
+      isa(likelihood, 'function_handle'))
+    likelihood = {likelihood};
   end
 
   % ensure all hyperparameter fields exist
