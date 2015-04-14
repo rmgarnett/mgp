@@ -179,12 +179,6 @@ function [y_star_mean, y_star_variance, ...
     posterior_cov = options.posterior_params;
   end
 
-  % % find GP posterior and Hessian of negative log likelihood evaluated
-  % % at the MLE/MAP \theta, as well as the derivatives of alpha and
-  % % diag W^{-1} with respect to \theta
-  % [posterior, ~, ~, HnlZ, dalpha, dWinv] = inference_method(hyperparameters, ...
-  %         mean_function, covariance_function, [], x, y);
-
   % find the predictive distribution conditioned on the MLE/MAP \theta
   if ((nargin > 8) && (nargout > 8) && ~isempty(y_star))
     % log probaiblities conditioned on MLE/MAP \theta requested
