@@ -137,7 +137,21 @@ function [y_star_mean, y_star_variance, ...
           y_star_variance_gp, f_star_variance_gp, ...
           log_probabilities_gp] = ...
       mgp(hyperparameters, inference_method, mean_function, ...
-          covariance_function, likelihood, x, y, x_star, y_star)
+          covariance_function, likelihood, x, y, x_star, y_star, varargin)
+
+  % if y_star is present, but not numeric, assume it should be part
+  % of varargin
+  if (nargin > 8 && ~isnumeric(y_star))
+    ys_cell = {y_star};
+    varargin = [ys_cell; varargin];
+  end
+
+  % set up an input parser
+  parser = inputParser;
+  addParameter(parser, 'posterior_params', []);
+  %keyboard
+  parse(parser, varargin{:});
+  options = parser.Results;
 
   % perform initial argument checks/transformations
   [hyperparameters, inference_method, mean_function, covariance_function, ...
@@ -148,11 +162,28 @@ function [y_star_mean, y_star_variance, ...
   mu = @(varargin) feval(mean_function{:},       hyperparameters.mean, varargin{:});
   K  = @(varargin) feval(covariance_function{:}, hyperparameters.cov,  varargin{:});
 
-  % find GP posterior and Hessian of negative log likelihood evaluated
-  % at the MLE/MAP \theta, as well as the derivatives of alpha and
-  % diag W^{-1} with respect to \theta
-  [posterior, ~, ~, HnlZ, dalpha, dWinv] = inference_method(hyperparameters, ...
-          mean_function, covariance_function, [], x, y);
+  % if mean and covariance of posterior not specified, estimate these
+  % with laplace approximation.  Requires calculation of Hessian at current
+  % hyperparameters using supplied inference method
+  if isempty(options.posterior_params)
+    [posterior, ~, ~, HnlZ] = inference_method(hyperparameters, ...
+            mean_function, covariance_function, [], x, y);
+    dalpha = posterior.dalpha;
+    dWinv = posterior.dWinv;
+    posterior_cov = HnlZ;
+  else
+    [posterior, ~, ~] = inference_method(hyperparameters, ...
+            mean_function, covariance_function, [], x, y);
+    dalpha = posterior.dalpha;
+    dWinv = posterior.dWinv;
+    posterior_cov = options.posterior_params;
+  end
+
+  % % find GP posterior and Hessian of negative log likelihood evaluated
+  % % at the MLE/MAP \theta, as well as the derivatives of alpha and
+  % % diag W^{-1} with respect to \theta
+  % [posterior, ~, ~, HnlZ, dalpha, dWinv] = inference_method(hyperparameters, ...
+  %         mean_function, covariance_function, [], x, y);
 
   % find the predictive distribution conditioned on the MLE/MAP \theta
   if ((nargin > 8) && (nargout > 8) && ~isempty(y_star))
@@ -195,21 +226,21 @@ function [y_star_mean, y_star_variance, ...
   %   d  V_{f | D}(x*; \theta) / d \theta_i.
 
   num_test            = size(x_star, 1);
-  num_hyperparameters = size(HnlZ.H, 1);
+  num_hyperparameters = size(posterior_cov.H, 1);
 
   df_star_mean     = zeros(num_test, num_hyperparameters);
   df_star_variance = zeros(num_test, num_hyperparameters);
 
   % partials with respect to covariance hyperparameters
-  for i = 1:numel(HnlZ.covariance_ind)
+  for i = 1:numel(posterior_cov.covariance_ind)
     dK           = K(x,      [],     i);
     dk_star      = K(x,      x_star, i);
     dk_star_star = K(x_star, 'diag', i);
 
-    df_star_mean(:, HnlZ.covariance_ind(i)) = ...
+    df_star_mean(:, posterior_cov.covariance_ind(i)) = ...
         dk_star' * posterior.alpha + k_star' * dalpha.cov(:, i);
 
-    df_star_variance(:, HnlZ.covariance_ind(i)) = ...
+    df_star_variance(:, posterior_cov.covariance_ind(i)) = ...
         dk_star_star - ...
         product_diag(k_star_V_inv, ...
                      2 * dk_star - (dK + diag(dWinv.cov(:, i))) * k_star_V_inv');
@@ -217,21 +248,21 @@ function [y_star_mean, y_star_variance, ...
 
   % partials with respect to likelihood hyperparameters
 
-  for i = 1:numel(HnlZ.likelihood_ind)
-    df_star_mean(:, HnlZ.likelihood_ind(i)) = k_star' * dalpha.lik(:, i);
+  for i = 1:numel(posterior_cov.likelihood_ind)
+    df_star_mean(:, posterior_cov.likelihood_ind(i)) = k_star' * dalpha.lik(:, i);
 
-    df_star_variance(:, HnlZ.likelihood_ind(i)) = ...
+    df_star_variance(:, posterior_cov.likelihood_ind(i)) = ...
         product_diag(k_star_V_inv, ...
                      bsxfun(@times, dWinv.lik(:, i), k_star_V_inv'));
   end
 
   % partials with respect to mean hyperparameters
-  for i = 1:numel(HnlZ.mean_ind)
+  for i = 1:numel(posterior_cov.mean_ind)
     dm_star = mu(x_star, i);
 
-    df_star_mean(:, HnlZ.mean_ind(i)) = dm_star + k_star' * dalpha.mean(:, i);
+    df_star_mean(:, posterior_cov.mean_ind(i)) = dm_star + k_star' * dalpha.mean(:, i);
 
-    df_star_variance(:, HnlZ.mean_ind(i)) = ...
+    df_star_variance(:, posterior_cov.mean_ind(i)) = ...
         product_diag(k_star_V_inv, ...
             bsxfun(@times, dWinv.mean(:, i), k_star_V_inv'));
   end
@@ -240,8 +271,8 @@ function [y_star_mean, y_star_variance, ...
   % account for uncertainty in \theta
   f_star_variance = ...
       (4 / 3) * f_star_variance_gp + ...
-      product_diag(df_star_mean,     HnlZ.H \ df_star_mean') + ...
-      product_diag(df_star_variance, HnlZ.H \ df_star_variance') ./ ...
+      product_diag(df_star_mean,     posterior_cov.H \ df_star_mean') + ...
+      product_diag(df_star_variance, posterior_cov.H \ df_star_variance') ./ ...
       (3 * f_star_variance_gp);
 
   % approximate predictive distribution for y* (observations)
