@@ -105,7 +105,7 @@ priors.mean = ...
     {get_prior(@gaussian_prior, 0, 0.5^2)};
 
 prior = get_prior(@independent_prior, priors);
-inference_method = add_prior_to_inference_method(inference_method, prior);
+inference_method = {@inference_with_prior, inference_method, prior};
 
 % find MAP hyperparameters
 map_hyperparameters = minimize(hyperparameters, @gp, 50, inference_method, ...
