@@ -21,25 +21,6 @@
 %   Embeddings for Gaussian Processes. (2014). 30th Conference on
 %   Uncertainty in Artificial Intelligence (UAI 2014).
 %
-% Notes
-% -----
-%
-% This code is only appropriate for GP regression! Exact inference
-% with a Gaussian observation likelihood is assumed.
-%
-% The MGP approximation requires that the provided hyperparameters be
-% the MLE hyperparameters:
-%
-%   \hat{theta} = argmax_\theta log p(y | X, \theta),
-%
-% or, if using a hyperparameter prior p(\theta), the MAP
-% hyperparameters:
-%
-%   \hat{theta} = argmax_\theta log p(y | X, \theta) + log p(\theta).
-%
-% This function does not perform the maximization over \theta but
-% rather assumes that the given hyperparameters represent \hat{theta}.
-%
 % Dependencies
 % ------------
 %
@@ -56,6 +37,77 @@
 %
 % which must also be in your MATLAB path.
 %
+% Notes
+% -----
+%
+% The approximation relies first on a Gaussian approximation to the
+% hyperparameter posterior p(\theta | D):
+%
+%   p(\theta | D) ~ N(\hat{\theta}, \Sigma).
+%
+% The hyperparameter vector passed in here is assumed to represent the
+% mean of this approximate posterior, \hat{\theta}. The user may, if
+% desired, also specify the covariance or precision matrix of the
+% approximate posterior. See "Specifiying Covariance" and "Specifying
+% Precision" below for details.
+%
+% If not specified, the code derives an approximate posterior by
+% performing a Laplace approximation at the given value of
+% \hat{\theta}. See "Laplace Approximation" below for details.
+%
+% Specifying Covariance
+% ---------------------
+%
+% To specify the covariance matrix \Sigma of the approximate
+% hyperparameter posterior distribution, augment the GPML
+% hyperparameter struct theta (representing the approximate posterior
+% mean \hat{\theta}) with a field .Sigma, containing a struct with
+% fields:
+%
+%   theta.Sigma.value
+%   theta.Sigma.covariance_ind
+%   theta.Sigma.likelihood_ind
+%   theta.Sigma.mean_ind
+%
+% theta.Sigma.value should be a (m x m) matrix containing the desired
+% covariance matrix. The remaining fields index into Sigma.value
+% identifying rows/columns with different hyperparameter subsets. Note
+% that this is the same structure as used for specifying the
+% hyperparameter Hessian matrix HnlZ in the gpml_extensions
+% repository; see hessians.m in that repository for more information.
+%
+% Specifying Precision
+% --------------------
+%
+% To specify the precision matrix \Sigma^{-1} of the approximate
+% hyperparameter posterior distribution, augment the GPML
+% hyperparameter struct theta (representing the approximate posterior
+% mean \hat{\theta}) with a field .Sigma_inv. See the "Specifying
+% Covariance" section above for the expected format of this field,
+% noting that of course in this case theta.Sigma_inv.value will
+% contain the desired (m x m) hyperparameter precision matrix.
+%
+% Laplace Approximation
+% ---------------------
+%
+% If the user does not specify the covariance or precision matrix of
+% the approximate hyperparameter posterior distribution, then a
+% Laplace approximation will be performed.
+%
+% In this case, this code requires that the provided hyperparameters
+% be the MLE hyperparameters:
+%
+%   \hat{theta} = argmax_\theta log p(y | X, \theta),
+%
+% or, if using a hyperparameter prior p(\theta), the MAP
+% hyperparameters:
+%
+%   \hat{theta} = argmax_\theta log p(y | X, \theta) + log p(\theta).
+%
+% In this case, this function will not perform the maximization over
+% \theta but will rather assume that the given hyperparameters
+% represent the MLE/MAP point.
+%
 % Usage
 % -----
 %
@@ -67,7 +119,7 @@
 %    log_probabilities, posterior, ...
 %    y_star_variance_gp, f_star_variance_gp, ...
 %    log_probabilities_gp] = ...
-%        mgp(hyperparameters, inference_method, mean_function, ...
+%        mgp(theta, inference_method, mean_function, ...
 %            covariance_function, likelihood, x, y, x_star, y_star);
 %
 % There are three additional output arguments: y_star_variance_gp,
@@ -87,8 +139,11 @@
 % Inputs
 % ------
 %
-%       hyperparameters: a GPML hyperparameter struct containing the
-%                        MLE/MAP hyperparameters
+%                 theta: a GPML hyperparameter struct containing the
+%                        mean of the approximate hyperparameter
+%                        posterior (and possibly the
+%                        covariance/precision of this approximation,
+%                        see above)
 %      inference_method: a GPML inference method
 %         mean_function: a GPML mean function
 %   covariance_function: a GPML covariance function
@@ -129,42 +184,71 @@
 %
 % See also GP.
 
-% Copyright (c) 2014 Roman Garnett.
+% Copyright (c) 2014--2015 Roman Garnett.
 
 function [y_star_mean, y_star_variance, ...
           f_star_mean, f_star_variance, ...
           log_probabilities, posterior, ...
           y_star_variance_gp, f_star_variance_gp, ...
           log_probabilities_gp] = ...
-      mgp(hyperparameters, inference_method, mean_function, ...
-          covariance_function, likelihood, x, y, x_star, y_star)
+      mgp(theta, inference_method, mean_function, covariance_function, ...
+          likelihood, x, y, x_star, y_star)
 
   % perform initial argument checks/transformations
-  [hyperparameters, inference_method, mean_function, covariance_function, ...
-   likelihood] = check_arguments(hyperparameters, inference_method, ...
-          mean_function, covariance_function, likelihood, x);
+  [theta, inference_method, mean_function, covariance_function, likelihood] ...
+      = check_arguments(theta, inference_method, mean_function, ...
+          covariance_function, likelihood, x);
 
   % convenience handles
-  mu = @(varargin) feval(mean_function{:},       hyperparameters.mean, varargin{:});
-  K  = @(varargin) feval(covariance_function{:}, hyperparameters.cov,  varargin{:});
-
-  % find GP posterior and Hessian of negative log likelihood evaluated
-  % at the MLE/MAP \theta, as well as the derivatives of alpha and
-  % diag W^{-1} with respect to \theta
-  [posterior, ~, ~, HnlZ, dalpha, dWinv] = inference_method(hyperparameters, ...
+  mu        = @(varargin) feval(mean_function{:},       theta.mean, varargin{:});
+  K         = @(varargin) feval(covariance_function{:}, theta.cov,  varargin{:});
+  inference = @()         feval(inference_method{:},    theta, ...
           mean_function, covariance_function, likelihood, x, y);
 
-  % find the predictive distribution conditioned on the MLE/MAP \theta
+  % S will contain either Sigma or Sigma_inv, and Sigma_times will
+  % provide a handle for computing \Sigma * x
+
+  have_posterior = false;
+  if (isfield(theta, 'Sigma'))
+    have_posterior = true;
+
+    S = theta.Sigma;
+    Sigma_times = @(x) (S.value * x);
+  elseif (isfield(theta, 'Sigma_inv'))
+    have_posterior = true;
+
+    S = theta.Sigma_inv;
+    Sigma_times = @(x) (S.value \ x);
+  end
+
+  % find GP posterior at the approximate posterior mean \theta, as well
+  % as the derivatives of alpha and diag W^{-1} with respect to
+  % \theta
+
+  if (have_posterior)
+    [posterior, ~, ~, dalpha, dWinv] = inference();
+  else
+    % neither covariance nor precision matrix given, perform Laplace
+    % approximation
+
+    % set S to Hessian of log likelihood/posterior
+    [posterior, ~, ~, dalpha, dWinv, S] = inference();
+
+    Sigma_times = @(x) (S.value \ x);
+  end
+
+  % find the predictive distribution conditioned on \theta
   if ((nargin > 8) && (nargout > 8) && ~isempty(y_star))
-    % log probaiblities conditioned on MLE/MAP \theta requested
+    % log probaiblities requested
+
     [y_star_mean, y_star_variance_gp, f_star_mean, f_star_variance_gp, ...
-     log_probabilities_gp] = gp(hyperparameters, inference_method, ...
-            mean_function, covariance_function, likelihood, x, posterior, ...
-            x_star, y_star);
+     log_probabilities_gp] = gp(theta, inference_method, mean_function, ...
+            covariance_function, likelihood, x, posterior, x_star, y_star);
+
   else
     [y_star_mean, y_star_variance_gp, f_star_mean, f_star_variance_gp] ...
-        = gp(hyperparameters, inference_method, mean_function, ...
-             covariance_function, likelihood, x, posterior, x_star);
+        = gp(theta, inference_method, mean_function, covariance_function, ...
+             likelihood, x, posterior, x_star);
 
     log_probabilities_gp = [];
   end
@@ -172,7 +256,7 @@ function [y_star_mean, y_star_variance, ...
   % precompute k*' [ K + W^{-1} ]^{-1}; it's used a lot
   k_star = K(x, x_star);
 
-  noise_variance = exp(2 * hyperparameters.lik);
+  noise_variance = exp(2 * theta.lik);
 
   % handle different posterior parameterizations
   if (is_chol(posterior.L))
@@ -194,44 +278,43 @@ function [y_star_mean, y_star_variance, ...
   %   d mu_{f | D}(x*; \theta) / d \theta_i, and
   %   d  V_{f | D}(x*; \theta) / d \theta_i.
 
-  num_test            = size(x_star, 1);
-  num_hyperparameters = size(HnlZ.H, 1);
+  num_test = size(x_star, 1);
+  num_hyperparameters = size(S.value, 1);
 
   df_star_mean     = zeros(num_test, num_hyperparameters);
   df_star_variance = zeros(num_test, num_hyperparameters);
 
   % partials with respect to covariance hyperparameters
-  for i = 1:numel(HnlZ.covariance_ind)
+  for i = 1:numel(S.covariance_ind)
     dK           = K(x,      [],     i);
     dk_star      = K(x,      x_star, i);
     dk_star_star = K(x_star, 'diag', i);
 
-    df_star_mean(:, HnlZ.covariance_ind(i)) = ...
+    df_star_mean(:, S.covariance_ind(i)) = ...
         dk_star' * posterior.alpha + k_star' * dalpha.cov(:, i);
 
-    df_star_variance(:, HnlZ.covariance_ind(i)) = ...
+    df_star_variance(:, S.covariance_ind(i)) = ...
         dk_star_star - ...
         product_diag(k_star_V_inv, ...
                      2 * dk_star - (dK + diag(dWinv.cov(:, i))) * k_star_V_inv');
   end
 
   % partials with respect to likelihood hyperparameters
+  for i = 1:numel(S.likelihood_ind)
+    df_star_mean(:, S.likelihood_ind(i)) = k_star' * dalpha.lik(:, i);
 
-  for i = 1:numel(HnlZ.likelihood_ind)
-    df_star_mean(:, HnlZ.likelihood_ind(i)) = k_star' * dalpha.lik(:, i);
-
-    df_star_variance(:, HnlZ.likelihood_ind(i)) = ...
+    df_star_variance(:, S.likelihood_ind(i)) = ...
         product_diag(k_star_V_inv, ...
                      bsxfun(@times, dWinv.lik(:, i), k_star_V_inv'));
   end
 
   % partials with respect to mean hyperparameters
-  for i = 1:numel(HnlZ.mean_ind)
+  for i = 1:numel(S.mean_ind)
     dm_star = mu(x_star, i);
 
-    df_star_mean(:, HnlZ.mean_ind(i)) = dm_star + k_star' * dalpha.mean(:, i);
+    df_star_mean(:, S.mean_ind(i)) = dm_star + k_star' * dalpha.mean(:, i);
 
-    df_star_variance(:, HnlZ.mean_ind(i)) = ...
+    df_star_variance(:, S.mean_ind(i)) = ...
         product_diag(k_star_V_inv, ...
             bsxfun(@times, dWinv.mean(:, i), k_star_V_inv'));
   end
@@ -240,8 +323,8 @@ function [y_star_mean, y_star_variance, ...
   % account for uncertainty in \theta
   f_star_variance = ...
       (4 / 3) * f_star_variance_gp + ...
-      product_diag(df_star_mean,     HnlZ.H \ df_star_mean') + ...
-      product_diag(df_star_variance, HnlZ.H \ df_star_variance') ./ ...
+      product_diag(df_star_mean,     Sigma_times(df_star_mean')) + ...
+      product_diag(df_star_variance, Sigma_times(df_star_variance')) ./ ...
       (3 * f_star_variance_gp);
 
   % approximate predictive distribution for y* (observations)
@@ -249,7 +332,7 @@ function [y_star_mean, y_star_variance, ...
 
   % if y* given, compute log predictive probabilities
   if ((nargin > 8) && (nargout > 4) && ~isempty(y_star))
-    log_probabilities = feval(likelihood{:}, hyperparameters.lik, y_star, ...
+    log_probabilities = feval(likelihood{:}, theta.lik, y_star, ...
             f_star_mean, f_star_variance);
   else
     log_probabilities = [];
@@ -266,15 +349,14 @@ end
 
 % performs argument checks/transformations similar to those found in
 % gp.m from GPML but guaranteed to be compatible with the MGP
-function [hyperparameters, inference_method, ...
-          mean_function, covariance_function, likelihood] = ...
-      check_arguments(hyperparameters, inference_method, ...
-                      mean_function, covariance_function, ...
-                      likelihood, x)
+function [theta, inference_method, mean_function, covariance_function, ...
+          likelihood] = ...
+  check_arguments(theta, inference_method, mean_function, covariance_function, ...
+                  likelihood, x)
 
   % default to exact inference
   if (isempty(inference_method))
-    inference_method = @exact_inference;
+    inference_method = {@exact_inference};
   end
 
   % default to zero mean function
@@ -293,8 +375,13 @@ function [hyperparameters, inference_method, ...
     likelihood = {@likGauss};
   end
 
-  % allow string/function handle input for mean, covariance, and
-  % likelihood functions; convert to cell arrays if necessary
+  % allow string/function handle input; convert to cell arrays if
+  % necessary
+  if (ischar(inference_method) || ...
+      isa(inference_method, 'function_handle'))
+    inference_method = {inference_method};
+  end
+
   if (ischar(mean_function) || ...
       isa(mean_function, 'function_handle'))
     mean_function = {mean_function};
@@ -312,8 +399,8 @@ function [hyperparameters, inference_method, ...
 
   % ensure all hyperparameter fields exist
   for field = {'cov', 'lik', 'mean'}
-    if (~isfield(hyperparameters, field{:}))
-      hyperparameters.(field{:}) = [];
+    if (~isfield(theta, field{:}))
+      theta.(field{:}) = [];
     end
   end
 
@@ -321,31 +408,25 @@ function [hyperparameters, inference_method, ...
   D = size(x, 2);
 
   expression = feval(mean_function{:});
-  if (numel(hyperparameters.mean) ~= eval(expression))
+  if (numel(theta.mean) ~= eval(expression))
     error('mgp:incorrect_specification', ...
           'wrong number of mean hyperparameters! (%i given, %s expected)', ...
-          numel(hyperparameters.mean), ...
+          numel(theta.mean), ...
           expression);
   end
 
   expression = feval(covariance_function{:});
-  if (numel(hyperparameters.cov) ~= eval(expression))
+  if (numel(theta.cov) ~= eval(expression))
     error('mgp:incorrect_specification', ...
           'wrong number of covariance hyperparameters! (%i given, %s expected)', ...
-          numel(hyperparameters.cov), ...
+          numel(theta.cov), ...
           expression);
   end
 
-  if (numel(hyperparameters.lik) ~= 1)
+  if (numel(theta.lik) ~= 1)
     error('mgp:incorrect_specification', ...
           'wrong number of likelihood hyperparameters! (%i given, 1 expected)', ...
-          numel(hyperparameters.lik));
-  end
-
-  % if infExact specified, use drop-in replacement exact_inference
-  % instead
-  if (isequal(inference_method, @infExact))
-    inference_method = @exact_inference;
+          numel(theta.lik));
   end
 
 end
