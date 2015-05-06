@@ -423,7 +423,8 @@ function [theta, inference_method, mean_function, covariance_function, ...
           expression);
   end
 
-  if (numel(theta.lik) ~= 1)
+  expression = feval(likelihood{:});
+  if (numel(theta.lik) ~= eval(expression))
     error('mgp:incorrect_specification', ...
           'wrong number of likelihood hyperparameters! (%i given, 1 expected)', ...
           numel(theta.lik));
