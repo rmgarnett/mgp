@@ -256,8 +256,6 @@ function [y_star_mean, y_star_variance, ...
   % precompute k*' [ K + W^{-1} ]^{-1}; it's used a lot
   k_star = K(x, x_star);
 
-  noise_variance = exp(2 * theta.lik);
-
   % handle different posterior parameterizations
   if (is_chol(posterior.L))
     % posterior.L contains chol(I + W^{1/2} K W^{1/2})
