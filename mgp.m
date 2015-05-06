@@ -327,14 +327,15 @@ function [y_star_mean, y_star_variance, ...
       product_diag(df_star_variance, Sigma_times(df_star_variance')) ./ ...
       (3 * f_star_variance_gp);
 
-  % approximate predictive distribution for y* (observations)
-  y_star_variance = f_star_variance + noise_variance;
-
-  % if y* given, compute log predictive probabilities
+  % approximate predictive distribution for y* (observations). if y*
+  % given, compute log predictive probabilities.
   if ((nargin > 8) && (nargout > 4) && ~isempty(y_star))
-    log_probabilities = feval(likelihood{:}, theta.lik, y_star, ...
-            f_star_mean, f_star_variance);
+    [log_probabilities, y_star_mean, y_star_variance] = ...
+        feval(likelihood{:}, theta.lik, y_star, f_star_mean, f_star_variance);
   else
+    [~,                 y_star_mean, y_star_variance] = ...
+        feval(likelihood{:}, theta.lik, [],     f_star_mean, f_star_variance);
+
     log_probabilities = [];
   end
 
